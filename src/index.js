@@ -1,23 +1,24 @@
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const bodyParser = require('body-parser');
-require('dotenv').config();  // 加载 .env 文件中的环境变量
+import express, { Router } from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
+dotenv.config();
+
+import authRoutes from './routes/auth/index.js';
 
 const app = express();
-const port = process.env.PORT || 3000;  // 读取环境变量中的端口，默认 3000
+const port = process.env.PORT || 3000;
 
-// 中间件配置
-app.use(cors());  // 解决跨域问题
-app.use(morgan('dev'));  // 请求日志
-app.use(bodyParser.json());  // 解析 JSON 请求体
+const router = Router();
 
-// 路由配置
-app.get('/', (req, res) => {
-  res.send('Hello, Express!');
-});
+app.use(cors());
+app.use(morgan('dev'));
+app.use(bodyParser.json());
+bodyParser.urlencoded({ extended: false })
 
-// 启动服务器
+app.use('/auth', authRoutes);
+
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
-});
+})

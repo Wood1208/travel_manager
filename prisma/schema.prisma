@@ -15,7 +15,7 @@ model User {
   email     String   @unique // 唯一邮箱
   password  String
   username  String  //用户名
-  role      Role     // 用户角色：游客或管理员
+  role      Role     @default(USER) //用户角色：游客(默认)或管理员
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -33,8 +33,8 @@ enum Role {
 model Attraction {
   id          Int      @id @default(autoincrement())
   name        String
+  imageUrl    String	// 景点图片 
   description String?	// 描述内容
-  address     String?	// 地址
   category    String	// 分类
   tags        String[]	// 标签
   createdAt   DateTime @default(now())
