@@ -1,0 +1,109 @@
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户模型
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique // 唯一邮箱
+  password  String
+  username  String  //用户名
+  role      Role     // 用户角色：游客或管理员
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 添加与 UserFavorite 的反向关系
+  userFavorites UserFavorite[]  // 一个用户可以有多个收藏
+  reservations Reservation[]     // 一个用户可以有多个预约
+}
+
+enum Role {
+  USER      // 游客
+  ADMIN     // 管理员
+}
+
+// 景点表
+model Attraction {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?	// 描述内容
+  address     String?	// 地址
+  category    String	// 分类
+  tags        String[]	// 标签
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 关联预约记录
+  tickets     TicketDay[]
+  engagements AttractionEngagement[]
+
+  // 关联用户收藏
+  userFavorites UserFavorite[]
+
+  // 添加与 Reservation 的反向关系
+  reservations Reservation[]  // 一个景点可以有多个预约
+}
+
+// 用户收藏
+model UserFavorite {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  attractionId  Int
+
+  user          User      @relation(fields: [userId], references: [id])
+  attraction    Attraction @relation(fields: [attractionId], references: [id])
+
+  @@unique([userId, attractionId])  // 确保同一用户只能收藏一个景点一次
+}
+
+// 景点每日门票
+model TicketDay {
+  id            Int      @id @default(autoincrement())
+  attractionId  Int
+  date          DateTime
+  totalTickets  Int      // 总票数
+  remainingTickets Int   // 剩余票数
+  currentFlow   Int      // 当前游客流量
+
+  attraction    Attraction @relation(fields: [attractionId], references: [id])
+
+  @@unique([attractionId, date])  // 确保每个景点每天只有一条记录
+}
+
+// 预约表
+model Reservation {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  attractionId  Int
+  date          DateTime
+  status        ReservationStatus
+
+  user          User      @relation(fields: [userId], references: [id])
+  attraction    Attraction @relation(fields: [attractionId], references: [id])
+
+  @@unique([userId, attractionId, date])  // 确保同一用户同一日期只能预约一个景点
+}
+
+enum ReservationStatus {
+  PENDING     // 待确认
+  CONFIRMED   // 已确认
+  CANCELLED   // 已取消
+}
+
+// 景点互动数据
+model AttractionEngagement {
+  id            Int      @id @default(autoincrement())
+  attractionId  Int
+  likes         Int      @default(0)	// 点赞
+  shares        Int      @default(0)	// 转发
+  favorites     Int      @default(0)	// 收藏
+
+  attraction    Attraction @relation(fields: [attractionId], references: [id])
+}
