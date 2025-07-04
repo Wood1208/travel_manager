@@ -33,9 +33,9 @@ enum Role {
 model Attraction {
   id          Int      @id @default(autoincrement())
   name        String
-  imageUrl    String	// 景点图片 
-  description String?	// 描述内容
-  category    String	// 分类
+  imageUrl    String	  // 景点图片 
+  description String?	  // 描述内容
+  category    String?	  // 分类
   tags        String[]	// 标签
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -79,14 +79,14 @@ model TicketDay {
 
 // 预约表
 model Reservation {
-  id            Int      @id @default(autoincrement())
+  id            Int               @id @default(autoincrement())
   userId        Int
   attractionId  Int
   date          DateTime
-  status        ReservationStatus
+  status        ReservationStatus @default(PENDING) // 默认未确认
 
-  user          User      @relation(fields: [userId], references: [id])
-  attraction    Attraction @relation(fields: [attractionId], references: [id])
+  user          User              @relation(fields: [userId], references: [id])
+  attraction    Attraction        @relation(fields: [attractionId], references: [id])
 
   @@unique([userId, attractionId, date])  // 确保同一用户同一日期只能预约一个景点
 }
