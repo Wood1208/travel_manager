@@ -3,8 +3,8 @@ import { PrismaClient } from '../../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
 // 返回用户的收藏景点
-const getUserFavorites = async ( userId ) => {
-  const { userId } = req.params;
+export const getUserFavorites = async (req, res) => {
+  const userId = req.user.userId;
 
   try {
     const favorites = await prisma.userFavorite.findMany({
@@ -17,7 +17,7 @@ const getUserFavorites = async ( userId ) => {
     });
 
     if(!favorites.length) {
-      return res.status(404).json({ message: 'No favorites found for this user' });
+      return res.status(404).json({ message: '这个用户目前没有收藏景点~' });
     }
 
     // 返回景点的详细信息
@@ -32,51 +32,96 @@ const getUserFavorites = async ( userId ) => {
 
     res.json(favoriteAttractions);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({
+      message: '查询收藏景点错误',
+      details: error.message,
+    });
   }
 }
 
 // 增加点赞数
-const incrementLike = async (attractionId) => {
+export const incrementLike = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+
   try {
-    const updatedEngagement = await prisma.attractionEngagement.update({
-      where: { attractionId },
-      data: {
-        likes: { increment: 1 },  // 点赞数 +1
-      },
+    const engagement = await prisma.attractionEngagement.findFirstOrThrow({
+      where: { attractionId }
     });
-    console.log('点赞数已增加:', updatedEngagement);
+
+    if (!engagement) {
+      return res.status(404).json({ message: '未找到该景点的互动数据' });
+    }
+
+    const updatedEngagement = await prisma.attractionEngagement.update({
+      where: { id: engagement.id },
+      data: { likes: engagement.likes + 1 }
+    });
+
+    res.status(201).json({
+      message: '点赞数已增加',
+      updatedEngagement,
+    });
   } catch (error) {
-    console.error('增加点赞数时出错:', error);
+    res.status(500).json({
+      message: '点赞异常出现错误!',
+      details: error.message,
+    });
   }
 };
 
 // 增加转发数
-const incrementShare = async (attractionId) => {
+export const incrementShare = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+
   try {
+    const engagement = await prisma.attractionEngagement.findFirstOrThrow({
+      where: { attractionId }
+    });
+
+    if (!engagement) {
+      return res.status(404).json({ message: '未找到该景点的互动数据' });
+    }
+
     const updatedEngagement = await prisma.attractionEngagement.update({
-      where: { attractionId },
+      where: { id: engagement.id },
       data: {
-        shares: { increment: 1 },  // 转发数 +1
+        shares: engagement.shares + 1,  // 转发数 +1
       },
     });
-    console.log('转发数已增加:', updatedEngagement);
+
+    res.status(201).json({
+      message: '转发数已增加',
+      updatedEngagement,
+    });
   } catch (error) {
-    console.error('增加转发数时出错:', error);
+    res.status(500).json({
+      message: '转发异常出现错误!',
+      details: error.message,
+    });
   }
 };
 
 // 用户收藏景点的函数
-const addFavorite = async (userId, attractionId) => {
+export const addFavorite = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+  const userId = req.user.userId;
+
   try {
     // 开始一个事务，确保数据一致性
     const result = await prisma.$transaction(async (prisma) => {
-      // 1. 增加景点的收藏数（AttractionEngagement）
-      const engagement = await prisma.attractionEngagement.update({
-        where: { attractionId },
+      // 1. 增加景点的收藏数（AttractionEngagement
+      const engagement = await prisma.attractionEngagement.findFirstOrThrow({
+        where: { attractionId }
+      });
+
+      if (!engagement) {
+        return res.status(404).json({ message: '未找到该景点的互动数据' });
+      }
+
+      const updatedEngagement = await prisma.attractionEngagement.update({
+        where: { id: engagement.id },
         data: {
-          favorites: { increment: 1 },  // 收藏数 +1
+          favorites: engagement.favorites + 1,  // 收藏数 +1
         },
       });
 
@@ -97,19 +142,28 @@ const addFavorite = async (userId, attractionId) => {
         },
       });
 
-      return { engagement, newFavorite };
+      return { updatedEngagement, newFavorite };
     });
 
     console.log('收藏成功:', result);
+    res.status(201).json({
+      message: '成功收藏该景点~',
+      result,
+    })
   } catch (error) {
     console.error('收藏操作失败:', error);
+    res.status(500).json({
+      message: '收藏景点操作失败',
+      details: error.message,
+    })
   }
 };
 
 // 记录用户预约景点
-const addReservation = async (req, res) => {
-  const { userId } = req.params;
-  const { attractionId, date } = req.body;
+export const addReservation = async (req, res) => {
+  const userId = req.user.userId;
+  const attractionId = parseInt(req.params.id, 10);
+  const { date } = req.body;
 
   try {
     // 检查景点是否存在
@@ -118,7 +172,7 @@ const addReservation = async (req, res) => {
     });
 
     if (!attraction) {
-      return res.status(404).json({ message: 'Attraction not found' });
+      return res.status(404).json({ message: '没有找到该景点!' });
     }
 
     // 检查景点当天的门票情况（其实感觉这里我可以在前端禁止）
@@ -132,11 +186,11 @@ const addReservation = async (req, res) => {
     });
 
     if (!ticket) {
-      return res.status(404).json({ message: 'No ticket record found for this date' });
+      return res.status(404).json({ message: '这个日期景点没有可售卖门票!' });
     }
 
     if (ticket.remainingTickets <= 0) {
-      return res.status(400).json({ message: 'No tickets available for this date' });
+      return res.status(400).json({ message: '这个日期的景点门票已经售空!' });
     }
 
     // 创建预约记录
@@ -144,7 +198,7 @@ const addReservation = async (req, res) => {
       data: {
         userId: parseInt(userId),
         attractionId: attractionId,
-        date: new Date(date),
+        date: new Date(date), 
       },
     });
 
@@ -157,16 +211,19 @@ const addReservation = async (req, res) => {
       },
     });
 
-    res.status(201).json({ message: 'Reservation created successfully', reservation });
+    res.status(201).json({ message: '预约记录已经成功创建', reservation });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({
+      message: '预约景点失败!',
+      details: error.message, 
+    });
   }
 }
 
 // 返回用户的预约记录
-const getUserReservations = async (userId) => {
-  const { userId } = req.params;
+export const getUserReservations = async (req, res) => {
+  const userId = req.user.userId;
 
   try {
     const reservations = await prisma.reservation.findMany({
@@ -198,3 +255,5 @@ const getUserReservations = async (userId) => {
   }
 
 }
+
+// TODO: 添加一个函数让用户自己确定预约？还是我直接不要预约状态，全部设置为已经预约成功？明天再想想吧

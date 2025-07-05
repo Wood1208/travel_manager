@@ -2,25 +2,9 @@ import { PrismaClient } from '../../generated/prisma/index.js';
 
 const prisma = new PrismaClient();
 
-// 创建景点及其每日门票记录
-const createAttractionWithTickets = async (data) => {
-  const { name, imageUrl, description, category, tags, totalTickets } = data;
-
-  const today = new Date();
-  const ticketDays = [];
-
-  // 生成下7天的日期
-  for (let i = 0; i < 7; i++) {
-    const nextDate = new Date(today);
-    nextDate.setDate(today.getDate() + i);  // 增加天数
-
-    ticketDays.push({
-      date: nextDate,
-      totalTickets: totalTickets,
-      remainingTickets: totalTickets,  // 初始剩余票数与总票数相同
-      currentFlow: 0,  // 初始游客流量为 0
-    });
-  }
+// 创建景点
+export const createAttraction = async (req, res) => {
+  const { name, imageUrl, description, category, tags } = req.body;
 
   try {
     // 使用事务创建景点和7天的门票记录
@@ -36,20 +20,6 @@ const createAttractionWithTickets = async (data) => {
         },
       });
 
-      // 为景点创建每日门票记录
-      const ticketDaysData = ticketDays.map((ticket) => ({
-        attractionId: attraction.id,
-        date: ticket.date,
-        totalTickets: ticket.totalTickets,
-        remainingTickets: ticket.remainingTickets,
-        currentFlow: ticket.currentFlow,
-      }));
-
-      // 批量创建门票记录
-      await prisma.ticketDay.createMany({
-        data: ticketDaysData,
-      });
-
       // 创建景点互动数据
       const engagement = await prisma.attractionEngagement.create({
         data: {
@@ -62,82 +32,168 @@ const createAttractionWithTickets = async (data) => {
 
       return { attraction, engagement };
     });
-
-    console.log('景点、每日门票和互动数据已成功创建:', createdAttraction);
+    // 发送成功的响应
+    res.status(201).json({
+      message: '景点和互动数据已成功创建',
+      attraction: createdAttraction.attraction,
+      engagement: createdAttraction.engagement,
+    });
   } catch (error) {
-    console.error('创建景点、每日门票和互动数据时出错:', error);
+    // 发送错误响应
+    res.status(500).json({
+      error: '创建景点和互动数据时出错',
+      details: error.message,
+    });
   }
 };
 
-// 修改景点信息和门票记录
-const updateAttractionWithTickets = async (data) => {
-  const { attractionId, name, imageUrl, description, category, tags, totalTickets } = data;
-
-  const today = new Date();
-  const ticketDays = [];
-
-  // 生成下7天的日期
-  for (let i = 0; i < 7; i++) {
-    const nextDate = new Date(today);
-    nextDate.setDate(today.getDate() + i);  // 增加天数
-
-    ticketDays.push({
-      date: nextDate,
-      totalTickets: totalTickets,
-      remainingTickets: totalTickets,  // 初始剩余票数与总票数相同
-      currentFlow: 0,  // 初始游客流量为 0
-    });
-  }
+// 创建景点对应日期门票
+export const createTicketForDay = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+  const { date, totalTickets } = req.body;
 
   try {
-    // 使用事务来更新景点、门票记录
-    const updatedAttraction = await prisma.$transaction(async (prisma) => {
-      // 更新景点信息
-      const attraction = await prisma.attraction.update({
-        where: { id: attractionId },
+    // 确保景点存在
+    const attraction = await prisma.attraction.findUnique({
+      where: { id: attractionId },
+    });
+
+    if (!attraction) {
+      return res.status(404).json({ message: '没有找到该景点!' });
+    }
+
+    // 创建门票记录
+    const ticket = await prisma.ticketDay.create({
+      data: {
+        attractionId,
+        date: new Date(date),
+        totalTickets,
+        remainingTickets: totalTickets, // 初始剩余票数为总票数
+        currentFlow: 0,  // 初始游客流量为 0
+      },
+    });
+
+    res.status(201).json({
+      message: '门票记录已成功创建',
+      ticket,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: '创建门票记录失败',
+      details: error.message,
+    });
+  }
+}
+
+// 修改景点对应日期门票
+export const updateTicketForDay = async (req, res) => {
+  const { date, totalTickets } = req.body;
+  const attractionId = parseInt(req.params.id, 10);
+
+  try {
+    // 确保景点存在
+    const attraction = await prisma.attraction.findUnique({
+      where: { id: attractionId },
+    });
+
+    if (!attraction) {
+      return res.status(404).json({ message: '没有找到该景点!' });
+    }
+
+    // 转换日期为标准格式
+    const ticketDate = new Date(date);
+
+    // 检查是否已存在该日期的门票记录
+    const existingTicket = await prisma.ticketDay.findUnique({
+      where: { attractionId_date: { attractionId, date: ticketDate } },
+    });
+
+    if (existingTicket) {
+      // 如果记录已存在，更新门票数据
+      const updatedTicket = await prisma.ticketDay.update({
+        where: { attractionId_date: { attractionId, date: ticketDate } },
         data: {
-          name,
-          imageUrl,
-          description,
-          category,
-          tags,
+          totalTickets,
+          remainingTickets: totalTickets, // 初始剩余票数为总票数
+          currentFlow: 0,  // 初始游客流量为 0
         },
       });
 
-      // 更新或创建门票记录
-      const ticketDaysData = ticketDays.map((ticket) => ({
-        attractionId: attraction.id,
-        date: ticket.date,
-        totalTickets: ticket.totalTickets,
-        remainingTickets: ticket.remainingTickets,
-        currentFlow: ticket.currentFlow,
-      }));
-
-      // 删除旧的门票记录并批量创建新的记录
-      await prisma.ticketDay.deleteMany({
-        where: { attractionId: attraction.id },
+      res.status(200).json({
+        message: '门票记录已成功更新',
+        ticket: updatedTicket,
+      });
+    } else {
+      // 如果记录不存在，创建新的门票记录
+      const ticket = await prisma.ticketDay.create({
+        data: {
+          attractionId,
+          date: ticketDate,
+          totalTickets,
+          remainingTickets: totalTickets,  // 初始剩余票数为总票数
+          currentFlow: 0,  // 初始游客流量为 0
+        },
       });
 
-      await prisma.ticketDay.createMany({
-        data: ticketDaysData,
+      res.status(201).json({
+        message: '门票记录已成功创建',
+        ticket,
       });
+    }
+  } catch (error) {
+    res.status(500).json({
+      message: '更新门票记录失败',
+      details: error.message,
+    });
+  }
+};
 
-      return attraction;
+// 更新景点信息
+export const updateAttraction = async (req, res) => {
+  const { name, imageUrl, description, category, tags } = req.body;
+  const attractionId = parseInt(req.params.id, 10);
+
+  try {
+    // 更新景点信息
+    const attraction = await prisma.attraction.update({
+      where: { id: attractionId },
+      data: {
+        name,
+        imageUrl,
+        description,
+        category,
+        tags,
+      },
     });
 
-    console.log('景点和门票记录已成功更新:', updatedAttraction);
+    res.status(200).json({
+      message: '景点信息已成功修改',
+      attraction,
+    });
   } catch (error) {
-    console.error('更新景点和门票记录时出错:', error);
+    res.status(500).json({
+      error: '更新景点信息时出错',
+      details: error.message,
+    });
   }
 };
 
 // 删除景点、门票记录和互动数据
-const deleteAttractionWithTicketsAndEngagement = async (attractionId) => {
+export const deleteAttractionWithTicketsAndEngagement = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+
+  // 如果转换失败，返回错误
+  if (isNaN(attractionId)) {
+    return res.status(400).json({
+      message: '无效的景点 ID',
+    });
+  }
+
   try {
     // 使用事务来删除景点及其关联的数据
     const deletedAttraction = await prisma.$transaction(async (prisma) => {
       // 删除景点的互动数据
-      await prisma.attractionEngagement.delete({
+      await prisma.attractionEngagement.deleteMany({
         where: { attractionId },
       });
 
@@ -154,14 +210,19 @@ const deleteAttractionWithTicketsAndEngagement = async (attractionId) => {
       return attraction;
     });
 
-    console.log('景点及相关数据已成功删除:', deletedAttraction);
+    res.status(201).json({
+      message: '景点已经被正常删除'
+    });
   } catch (error) {
-    console.error('删除景点及相关数据时出错:', error);
+    res.status(500).json({
+      message: '删除景点时出现错误',
+      details: error.message,
+    });
   }
 };
 
-// 获取景点数据
-const getAttractionsList = async (req, res) => {
+// 获取全部景点数据
+export const getAttractionsList = async (req, res) => {
   try {
     const attractions = await prisma.attraction.findMany({
       include: {
@@ -189,9 +250,12 @@ const getAttractionsList = async (req, res) => {
     }
 
     // 返回景点数据给前端
-    res.json(attractions);
+    res.status(201).json(attractions);
   } catch (error) {
     console.error('获取景点列表失败:', error);
-    res.status(500).send('服务器错误');
+    res.status(500).json({
+      message: '获取景点列表失败!',
+      details: error.message,
+    });
   }
 };
