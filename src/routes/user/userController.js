@@ -30,12 +30,33 @@ export const getUserFavorites = async (req, res) => {
       tags: favorite.attraction.tags,
     }));
 
-    res.json(favoriteAttractions);
+    res.status(201).json(favoriteAttractions);
   } catch (error) {
     res.status(500).json({
       message: '查询收藏景点错误',
       details: error.message,
     });
+  }
+}
+
+// 返回用户是否收藏该景点
+export const getUserFavoriteById = async (req, res) => {
+  const userId = req.user.userId;
+  const attractionId = parseInt(req.params.id, 10);
+
+  try {
+    const favorite = await prisma.userFavorite.findUnique({
+      where: {
+        userId_attractionId: {
+          userId: parseInt(userId),
+          attractionId: parseInt(attractionId),
+        },
+      },
+    });
+    res.status(201).json({ isFavorited: !!favorite }); // 返回是否已收藏
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('服务器错误');
   }
 }
 
@@ -69,8 +90,8 @@ export const incrementLike = async (req, res) => {
   }
 };
 
-// 增加转发数
-export const incrementShare = async (req, res) => {
+// 取消点赞
+export const decrementLike = async (req, res) => {
   const attractionId = parseInt(req.params.id, 10);
 
   try {
@@ -82,26 +103,28 @@ export const incrementShare = async (req, res) => {
       return res.status(404).json({ message: '未找到该景点的互动数据' });
     }
 
+    if (engagement.likes <= 0) {
+      return res.status(400).json({ message: '点赞数已经为0, 无法减少' });
+    }
+
     const updatedEngagement = await prisma.attractionEngagement.update({
       where: { id: engagement.id },
-      data: {
-        shares: engagement.shares + 1,  // 转发数 +1
-      },
+      data: { likes: engagement.likes - 1 }
     });
 
-    res.status(201).json({
-      message: '转发数已增加',
+    res.status(200).json({
+      message: '点赞数已减少',
       updatedEngagement,
     });
   } catch (error) {
     res.status(500).json({
-      message: '转发异常出现错误!',
+      message: '取消点赞异常出现错误!',
       details: error.message,
     });
   }
 };
 
-// 用户收藏景点的函数
+// 用户收藏景点
 export const addFavorite = async (req, res) => {
   const attractionId = parseInt(req.params.id, 10);
   const userId = req.user.userId;
@@ -159,6 +182,62 @@ export const addFavorite = async (req, res) => {
   }
 };
 
+// 用户取消收藏
+export const removeFavorite = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+  const userId = req.user.userId;
+
+  try {
+    // 开始一个事务，确保数据一致性
+    const result = await prisma.$transaction(async (prisma) => {
+      // 1. 查找景点的互动数据
+      const engagement = await prisma.attractionEngagement.findFirstOrThrow({
+        where: { attractionId }
+      });
+
+      if (!engagement) {
+        return res.status(404).json({ message: '未找到该景点的互动数据' });
+      }
+
+      // 2. 检查用户是否收藏过该景点
+      const existingFavorite = await prisma.userFavorite.findUnique({
+        where: { userId_attractionId: { userId, attractionId } },
+      });
+
+      if (!existingFavorite) {
+        throw new Error('用户没有收藏该景点');
+      }
+
+      // 3. 删除收藏记录（UserFavorite）
+      const deletedFavorite = await prisma.userFavorite.delete({
+        where: { userId_attractionId: { userId, attractionId } },
+      });
+
+      // 4. 更新景点的收藏数（减少收藏数）
+      const updatedEngagement = await prisma.attractionEngagement.update({
+        where: { id: engagement.id },
+        data: {
+          favorites: engagement.favorites - 1,  // 收藏数 -1
+        },
+      });
+
+      return { updatedEngagement, deletedFavorite };
+    });
+
+    console.log('取消收藏成功:', result);
+    res.status(200).json({
+      message: '成功取消收藏该景点~',
+      result,
+    });
+  } catch (error) {
+    console.error('取消收藏操作失败:', error);
+    res.status(500).json({
+      message: '取消收藏景点操作失败',
+      details: error.message,
+    });
+  }
+};
+
 // 记录用户预约景点
 export const addReservation = async (req, res) => {
   const userId = req.user.userId;
@@ -175,7 +254,6 @@ export const addReservation = async (req, res) => {
       return res.status(404).json({ message: '没有找到该景点!' });
     }
 
-    // 检查景点当天的门票情况（其实感觉这里我可以在前端禁止）
     const ticket = await prisma.ticketDay.findUnique({
       where: {
         attractionId_date: {
@@ -221,6 +299,38 @@ export const addReservation = async (req, res) => {
   }
 }
 
+// 增加转发数
+export const incrementShare = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+
+  try {
+    const engagement = await prisma.attractionEngagement.findFirstOrThrow({
+      where: { attractionId }
+    });
+
+    if (!engagement) {
+      return res.status(404).json({ message: '未找到该景点的互动数据' });
+    }
+
+    const updatedEngagement = await prisma.attractionEngagement.update({
+      where: { id: engagement.id },
+      data: {
+        shares: engagement.shares + 1,  // 转发数 +1
+      },
+    });
+
+    res.status(201).json({
+      message: '转发数已增加',
+      updatedEngagement,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: '转发异常出现错误!',
+      details: error.message,
+    });
+  }
+};
+
 // 返回用户的预约记录
 export const getUserReservations = async (req, res) => {
   const userId = req.user.userId;
@@ -242,13 +352,14 @@ export const getUserReservations = async (req, res) => {
     // 返回预约记录的详细信息
     const reservationDetails = reservations.map(reservation => ({
       id: reservation.id,
+      attractionId: reservation.attractionId,
       attractionName: reservation.attraction.name,
       attractionImageUrl: reservation.attraction.imageUrl,
       reservationDate: reservation.date,
       status: reservation.status,
     }));
 
-    res.json(reservationDetails);
+    res.status(200).json(reservationDetails);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Internal server error' });
@@ -256,4 +367,47 @@ export const getUserReservations = async (req, res) => {
 
 }
 
-// TODO: 添加一个函数让用户自己确定预约？还是我直接不要预约状态，全部设置为已经预约成功？明天再想想吧
+// 用户取消预约
+export const removeReservation = async (req, res) => {
+  const attractionId = parseInt(req.params.id, 10);
+  const userId = req.user.userId;
+  const { date } = req.body;
+  console.log(attractionId, userId, date);
+  try {
+    // 查找是否存在对应的预约记录
+    const reservation = await prisma.reservation.findUnique({
+      where: {
+        userId_attractionId_date: {
+          userId: userId,
+          attractionId: attractionId,
+          date: new Date(date), 
+        },
+      },
+    });
+    console.log(reservation);
+    if (!reservation) {
+      return res.status(404).json({
+        message: 'Reservation not found',
+      });
+    }
+
+    // 删除预约记录
+    const result = await prisma.reservation.delete({
+      where: {
+        id: reservation.id,
+      },
+    });
+
+    return res.status(200).json({
+      message: 'Reservation removed successfully',
+      result,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: 'Failed to remove reservation',
+      error: error.message,
+    });
+  }
+}
+

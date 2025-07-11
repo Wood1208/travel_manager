@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 
 export function authenticate(req, res, next) {
   const token = req.header('Authorization')?.replace('Bearer ', '');
+  console.log("Token received:", token); // 添加日志，查看接收到的 token
   
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });
@@ -16,5 +17,3 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
-
-// TODO: 检查用户是否为管理员

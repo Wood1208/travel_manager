@@ -18,7 +18,7 @@ export async function createUser(req, res){
         password: hashedPassword,
       },
     });
-
+    console.log(user.role);
     res.status(201).json(user);
   } catch (error) {
     console.error(error); // 打印出错误对象
@@ -52,9 +52,46 @@ export async function loginUser(req, res) {
       { expiresIn: '7d' } // 设置令牌过期时间为7天
     );
 
-    res.json({ token });
+    res.json({
+      token,
+      user 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error logging in' });
+  }
+}
+
+// 检测用户登录状态
+export async function chechAuth(req, res) {
+  try {
+    const userId = req.user.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId) },
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    return res.status(200).json({
+      isAuthenticated: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Error during authentication check:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 

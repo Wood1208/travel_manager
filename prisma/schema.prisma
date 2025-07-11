@@ -65,12 +65,12 @@ model UserFavorite {
 
 // 景点每日门票
 model TicketDay {
-  id            Int      @id @default(autoincrement())
-  attractionId  Int
-  date          DateTime
-  totalTickets  Int      // 总票数
-  remainingTickets Int   // 剩余票数
-  currentFlow   Int      // 当前游客流量
+  id                Int      @id @default(autoincrement())
+  attractionId      Int
+  date              DateTime
+  totalTickets      Int
+  remainingTickets  Int   // 剩余票数
+  currentFlow       Int      // 当前游客流量
 
   attraction    Attraction @relation(fields: [attractionId], references: [id])
 
@@ -83,7 +83,7 @@ model Reservation {
   userId        Int
   attractionId  Int
   date          DateTime
-  status        ReservationStatus @default(PENDING) // 默认未确认
+  status        ReservationStatus @default(CONFIRMED) // 默认已经确认
 
   user          User              @relation(fields: [userId], references: [id])
   attraction    Attraction        @relation(fields: [attractionId], references: [id])
